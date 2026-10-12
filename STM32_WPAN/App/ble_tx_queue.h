@@ -31,6 +31,7 @@ typedef void (*BLE_TX_Queue_callback_t)(void);
 void BLE_TX_Queue_Init(void);
 void BLE_TX_Queue_TxPoolAvailableNotification(void);
 
+uint32_t BLE_TX_Queue_GetFreeCount(void);
 uint8_t *BLE_TX_Queue_GetNextTxPacket(void);
 void BLE_TX_Queue_SendNextTxPacket(
 		Custom_STM_Char_Opcode_t opcode, uint8_t length,

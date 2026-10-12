@@ -92,6 +92,9 @@ void FS_ActiveControl_Init(void)
 
 	// Initialize saved GNSS time
 	memset(&savedTime, 0, sizeof(FS_GNSS_Time_t));
+
+	// Start a new session for BLE sensor streams
+	Custom_Sensor_Reset();
 }
 
 void FS_ActiveControl_DeInit(void)
@@ -124,6 +127,9 @@ void FS_Baro_DataReady_Callback(void)
 		// Save to log file
 		FS_Log_WriteBaroData(FS_Baro_GetData());
 	}
+
+	// Update BLE characteristic
+	Custom_Baro_Update(FS_Baro_GetData());
 }
 
 void FS_Hum_DataReady_Callback(void)
@@ -135,6 +141,9 @@ void FS_Hum_DataReady_Callback(void)
 		// Save to log file
 		FS_Log_WriteHumData(FS_Hum_GetData());
 	}
+
+	// Update BLE characteristic
+	Custom_Hum_Update(FS_Hum_GetData());
 }
 
 void FS_Mag_DataReady_Callback(void)
@@ -146,6 +155,9 @@ void FS_Mag_DataReady_Callback(void)
 		// Save to log file
 		FS_Log_WriteMagData(FS_Mag_GetData());
 	}
+
+	// Update BLE characteristic
+	Custom_Mag_Update(FS_Mag_GetData());
 }
 
 void FS_ActiveControl_DataReady_Callback(void)
@@ -233,6 +245,9 @@ void FS_IMU_DataReady_Callback(void)
 		// Save to log file
 		FS_Log_WriteIMUData(FS_IMU_GetData());
 	}
+
+	// Update BLE characteristics
+	Custom_IMU_Update(FS_IMU_GetData());
 }
 
 void FS_VBAT_ValueReady_Callback(void)

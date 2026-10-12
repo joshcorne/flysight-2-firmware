@@ -60,6 +60,11 @@ void BLE_TX_Queue_TxPoolAvailableNotification(void)
 	UTIL_SEQ_SetTask(1<<CFG_TASK_BLE_TX_QUEUE_TRANSMIT_ID, CFG_SCH_PRIO_1);
 }
 
+uint32_t BLE_TX_Queue_GetFreeCount(void)
+{
+	return tx_read_index + FS_CRS_WINDOW_LENGTH - tx_write_index;
+}
+
 uint8_t *BLE_TX_Queue_GetNextTxPacket(void)
 {
 	if (tx_write_index < tx_read_index + FS_CRS_WINDOW_LENGTH)

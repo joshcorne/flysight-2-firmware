@@ -64,7 +64,7 @@ The FlySight 2's operational mode affects BLE service availability, primarily du
 
 *   **Idle Mode (LED Off):** Default low-power state. BLE is active (slow advertising). Full BLE functionality (File Transfer, Real-time Data subscription, State Control) is available. This is the **required** mode for file system operations via BLE.
 *   **Active Mode (Green LED):** GNSS active, logging, audio feedback. Entered via a ~1s power button press from Idle.
-    *   Real-time data (`SD_GNSS_Measurement`) notifications are available if subscribed.
+    *   Real-time data (`SD_GNSS_Measurement` and the sensor measurement characteristics) notifications are available if subscribed.
     *   **File Transfer (File_Transfer service) is UNAVAILABLE** due to potential SD card conflicts with logging. Commands will likely return NAK (`0xf0`).
 *   **Config Selection Mode (Orange LED):** Entered via short press then long press from Idle. BLE connection may be possible, but file transfer is unavailable.
 *   **USB Mode (Red/Green LED):** Mass Storage Device mode. BLE connection may be possible, but **File Transfer (File_Transfer service) is UNAVAILABLE** due to USB using the file system.
@@ -199,7 +199,7 @@ Packets sent over `FT_Packet_In` (WriteWithoutResponse) and received via notific
 
 ### 2. Sensor_Data Service
 
-Provides live GNSS data when FlySight is in Active Mode or Start Mode. Requires bonding.
+Provides live GNSS data when FlySight is in Active Mode or Start Mode, and live barometer, humidity, accelerometer, gyroscope and magnetometer data in Active Mode. Requires bonding.
 
 *   **Service UUID:** `00000001-cc7a-482a-984a-7f2ed5b3e58f`
 *   **Characteristics:**
@@ -241,7 +241,7 @@ Provides live GNSS data when FlySight is in Active Mode or Start Mode. Requires 
         *   UUID: `00000006-8e22-4541-9d4c-21edae82ed19`
         *   Properties: **Write, Indicate**
         *   Permissions: Encrypted Read/Write required.
-        *   Usage: Used to control which data fields are included in the `SD_GNSS_Measurement` characteristic notifications. Also used to retrieve the current mask. Central enables indications if responses are desired.
+        *   Usage: Used to control which data fields are included in the `SD_GNSS_Measurement` and sensor measurement notifications, and how often sensor measurements are sent. Also used to retrieve the current settings. Central enables indications if responses are desired.
         *   Max Length: 20 bytes (`SizeSd_Control_Point`). Variable length.
         *   **Write Operations (Central to FlySight):**
             *   Byte 0: Opcode
@@ -249,6 +249,15 @@ Provides live GNSS data when FlySight is in Active Mode or Start Mode. Requires 
                     *   Payload: `[new_mask (uint8)]`. (Total length: 2 bytes)
                 *   `0x02` (`SD_CMD_GET_GNSS_BLE_MASK`): Request the current data mask.
                     *   Payload: (None). (Total length: 1 byte)
+                *   `0x03` (`SD_CMD_SET_SENSOR_BLE_MASK`): Set the data mask for a sensor measurement characteristic. Bits the sensor doesn't support are ignored.
+                    *   Payload: `[sensor_id (uint8)] [new_mask (uint8)]`. (Total length: 3 bytes)
+                *   `0x04` (`SD_CMD_GET_SENSOR_BLE_MASK`): Request the current data mask for a sensor.
+                    *   Payload: `[sensor_id (uint8)]`. (Total length: 2 bytes)
+                *   `0x10` (`SD_CMD_SET_SENSOR_BLE_DIVIDER`): Send every Nth sample from a sensor (1 = every sample, the default).
+                    *   Payload: `[sensor_id (uint8)] [divider (uint16)]`, divider 1-65535. (Total length: 4 bytes)
+                *   `0x11` (`SD_CMD_GET_SENSOR_BLE_DIVIDER`): Request the current divider for a sensor.
+                    *   Payload: `[sensor_id (uint8)]`. (Total length: 2 bytes)
+                *   `sensor_id`: `0` = Baro, `1` = Hum, `2` = Accel, `3` = Gyro, `4` = Mag.
         *   **Indication Responses (FlySight to Central, if indications enabled):**
             *   Format: `[0xF0 (CP_RESPONSE_ID)] [Request Opcode] [Status] [Optional Data]`
             *   For `SD_CMD_SET_GNSS_BLE_MASK (0x01)`:
@@ -257,8 +266,54 @@ Provides live GNSS data when FlySight is in Active Mode or Start Mode. Requires 
             *   For `SD_CMD_GET_GNSS_BLE_MASK (0x02)`:
                 *   Success: `[0xF0] [0x02] [0x01 (CP_STATUS_SUCCESS)] [current_mask (uint8)]`
                 *   Invalid Param: `[0xF0] [0x02] [0x03 (CP_STATUS_INVALID_PARAMETER)]`
+            *   For `SD_CMD_SET_SENSOR_BLE_MASK (0x03)` and `SD_CMD_SET_SENSOR_BLE_DIVIDER (0x10)`:
+                *   Success: `[0xF0] [Opcode] [0x01 (CP_STATUS_SUCCESS)]`
+                *   Invalid Param (wrong length, unknown `sensor_id` or divider of 0): `[0xF0] [Opcode] [0x03 (CP_STATUS_INVALID_PARAMETER)]`
+            *   For `SD_CMD_GET_SENSOR_BLE_MASK (0x04)`:
+                *   Success: `[0xF0] [0x04] [0x01 (CP_STATUS_SUCCESS)] [sensor_id (uint8)] [current_mask (uint8)]`
+            *   For `SD_CMD_GET_SENSOR_BLE_DIVIDER (0x11)`:
+                *   Success: `[0xF0] [0x11] [0x01 (CP_STATUS_SUCCESS)] [sensor_id (uint8)] [divider (uint16)]`
             *   For unknown command:
                 *   `[0xF0] [Received Opcode] [0x02 (CP_STATUS_CMD_NOT_SUPPORTED)]`
+
+    *   **Sensor Measurements (`SD_Baro_Measurement`, `SD_Hum_Measurement`, `SD_Accel_Measurement`, `SD_Gyro_Measurement`, `SD_Mag_Measurement`)**
+        *   UUIDs:
+
+            | Characteristic         | UUID                                   | sensor_id | Max Length |
+            | :--------------------- | :------------------------------------- | :-------- | :--------- |
+            | `SD_Baro_Measurement`  | `00000008-8e22-4541-9d4c-21edae82ed19` | `0`       | 15 bytes   |
+            | `SD_Hum_Measurement`   | `0000000c-8e22-4541-9d4c-21edae82ed19` | `1`       | 9 bytes    |
+            | `SD_Accel_Measurement` | `00000009-8e22-4541-9d4c-21edae82ed19` | `2`       | 19 bytes   |
+            | `SD_Gyro_Measurement`  | `0000000a-8e22-4541-9d4c-21edae82ed19` | `3`       | 19 bytes   |
+            | `SD_Mag_Measurement`   | `0000000b-8e22-4541-9d4c-21edae82ed19` | `4`       | 13 bytes   |
+
+        *   Properties: **Read, Notify**
+        *   Permissions: Encrypted Read/Write required.
+        *   Usage: Streams raw sensor samples *only when FlySight is in Active Mode* and the sensor is enabled in `config.txt` (`Enable_Baro`, `Enable_Hum`, `Enable_IMU`, `Enable_Mag`). Sensors are not started in Start Mode. Central must enable notifications.
+            *   Each sensor notifies at its configured output data rate (`Baro_ODR`, `Hum_ODR`, `Accel_ODR`, `Gyro_ODR`, `Mag_ODR`) divided by its BLE divider (see `SD_CMD_SET_SENSOR_BLE_DIVIDER`). With the default configuration this is 10 Hz for the barometer and magnetometer, 1 Hz for humidity and 12.5 Hz for the accelerometer and gyroscope.
+            *   At most one packet per sensor is queued at a time, and sensor packets are never allowed to fill the transmit queue. If the link cannot keep up with the requested rate, samples are skipped rather than delaying GNSS notifications or control point responses. Use `time` to compute rates rather than notification arrival times.
+            *   A read returns the most recent sample. Before the first sample of the current Active Mode session the value is empty.
+        *   **Data Format (Variable Length, Little Endian):** The layout follows `SD_GNSS_Measurement`: a mask byte followed by the fields it selects, in the order below.
+            *   Byte 0: `current_mask` (uint8). The fields present in this packet.
+                *   `0x80` (`SENSOR_BLE_BIT_TIME`): Sample time included.
+                *   `0x40` (`SENSOR_BLE_BIT_DATA`): Measurement included.
+                *   `0x20` (`SENSOR_BLE_BIT_TEMPERATURE`): Sensor temperature included.
+                *   `0x10` (`SENSOR_BLE_BIT_BARO_REF`): Reference pressure included (`SD_Baro_Measurement` only).
+            *   If `SENSOR_BLE_BIT_TIME` is set: `time` (uint32_t). Sample time (ms) on the FlySight's sensor clock, which restarts at zero when Active Mode starts. This is the same clock as the `time` column for sensor rows in `SENSOR.CSV`. It is not aligned to GNSS time. (4 bytes)
+            *   If `SENSOR_BLE_BIT_DATA` is set:
+
+                | Characteristic         | Fields                                   | Units             | Size     |
+                | :--------------------- | :--------------------------------------- | :---------------- | :------- |
+                | `SD_Baro_Measurement`  | `pressure` (int32_t)                     | Pa * 100          | 4 bytes  |
+                | `SD_Hum_Measurement`   | `humidity` (uint16_t)                    | % RH * 10         | 2 bytes  |
+                | `SD_Accel_Measurement` | `ax`, `ay`, `az` (int32_t each)          | g * 100000        | 12 bytes |
+                | `SD_Gyro_Measurement`  | `wx`, `wy`, `wz` (int32_t each)          | deg/s * 1000      | 12 bytes |
+                | `SD_Mag_Measurement`   | `x`, `y`, `z` (int16_t each)             | gauss * 1000      | 6 bytes  |
+
+            *   If `SENSOR_BLE_BIT_TEMPERATURE` is set: `temperature` (2 bytes). Degrees C * 100 (int16_t) for the barometer, accelerometer and gyroscope; degrees C * 10 for humidity (uint16_t) and the magnetometer (int16_t). The accelerometer and gyroscope report the same IMU temperature.
+            *   If `SENSOR_BLE_BIT_BARO_REF` is set (`SD_Baro_Measurement` only): `ref_pressure` (int32_t). Pressure of the first barometer sample since Active Mode started (Pa * 100). It stays the same for the whole session, so a client that connects or reconnects late can still measure height relative to where the FlySight was switched on. It represents ground pressure only if the session starts at the intended ground location. (4 bytes)
+        *   Default Mask: `0xF0` (time, measurement, temperature, reference pressure) for the barometer, so every packet includes the session reference; `0xE0` (time, measurement, temperature) for every other sensor.
+        *   Masks and dividers are set through `SD_Control_Point`. They start at their defaults when the FlySight powers on and keep their values until it is powered off, like the GNSS mask. Clients should set the values they need after connecting.
 
 ### 3. Starter_Pistol Service
 
@@ -383,6 +438,11 @@ FlySight 2 also implements standard BLE services:
 | Sensor Data Service     |                           | `00000001-cc7a-482a-984a-7f2ed5b3e58f`       | Sensor_Data        |                        | N/A                |
 | GNSS Measurement        | `SD_GNSS_Measurement`     | `00000000-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 44 (Var)           |
 | Sensor Data Control     | `SD_Control_Point`        | `00000006-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Write, Indicate        | 20 (Var)           |
+| Barometer Measurement   | `SD_Baro_Measurement`     | `00000008-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 15 (Var)           |
+| Accelerometer Measurement | `SD_Accel_Measurement`  | `00000009-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 19 (Var)           |
+| Gyroscope Measurement   | `SD_Gyro_Measurement`     | `0000000a-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 19 (Var)           |
+| Magnetometer Measurement | `SD_Mag_Measurement`     | `0000000b-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 13 (Var)           |
+| Humidity Measurement    | `SD_Hum_Measurement`      | `0000000c-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 9 (Var)            |
 | Starter Pistol Service  |                           | `00000002-cc7a-482a-984a-7f2ed5b3e58f`       | Starter_Pistol     |                        | N/A                |
 | Starter Pistol Control  | `SP_Control_Point`        | `00000003-8e22-4541-9d4c-21edae82ed19`       | Starter_Pistol     | Write, Indicate        | 20 (Var)           |
 | Starter Pistol Result   | `SP_Result`               | `00000004-8e22-4541-9d4c-21edae82ed19`       | Starter_Pistol     | Read, Indicate         | 9 (Const)          |

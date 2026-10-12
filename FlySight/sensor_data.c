@@ -26,6 +26,7 @@
 #include "custom_stm.h"       // For CUSTOM_STM_SD_CONTROL_POINT char opcode
 #include "ble_tx_queue.h"     // For BLE_TX_Queue_SendTxPacket
 #include "gnss_ble.h"         // For GNSS_BLE_SetMask, GNSS_BLE_GetMask
+#include "sensor_ble.h"       // For Sensor_BLE_SetMask, Sensor_BLE_SetDivider, etc.
 #include "string.h"           // For memcpy
 #include "app_common.h"       // For APP_DBG_MSG (optional)
 #include "dbg_trace.h"
@@ -35,6 +36,7 @@ extern uint8_t SizeSd_Control_Point;
 void SensorData_Init(void)
 {
 	  GNSS_BLE_Init();
+	  Sensor_BLE_Init();
 }
 
 void SensorData_Handle_SD_ControlPointWrite(
@@ -76,6 +78,53 @@ void SensorData_Handle_SD_ControlPointWrite(
                 } else {
                     response_data_buf[0] = GNSS_BLE_GetMask(); // Call utility
                     response_data_len = 1;
+                    status = CP_STATUS_SUCCESS;
+                }
+                break;
+
+            case SD_CMD_SET_SENSOR_BLE_MASK:
+                if (params_len != 2 || params[0] >= SENSOR_BLE_COUNT) {
+                    status = CP_STATUS_INVALID_PARAMETER;
+                } else {
+                    Sensor_BLE_SetMask((Sensor_BLE_Stream_t) params[0], params[1]);
+                    status = CP_STATUS_SUCCESS;
+                }
+                break;
+
+            case SD_CMD_GET_SENSOR_BLE_MASK:
+                if (params_len != 1 || params[0] >= SENSOR_BLE_COUNT) {
+                    status = CP_STATUS_INVALID_PARAMETER;
+                } else {
+                    response_data_buf[0] = params[0];
+                    response_data_buf[1] = Sensor_BLE_GetMask((Sensor_BLE_Stream_t) params[0]);
+                    response_data_len = 2;
+                    status = CP_STATUS_SUCCESS;
+                }
+                break;
+
+            case SD_CMD_SET_SENSOR_BLE_DIVIDER:
+                if (params_len != 3 || params[0] >= SENSOR_BLE_COUNT) {
+                    status = CP_STATUS_INVALID_PARAMETER;
+                } else {
+                    uint16_t divider = params[1] | (params[2] << 8);
+                    if (divider == 0) {
+                        status = CP_STATUS_INVALID_PARAMETER;
+                    } else {
+                        Sensor_BLE_SetDivider((Sensor_BLE_Stream_t) params[0], divider);
+                        status = CP_STATUS_SUCCESS;
+                    }
+                }
+                break;
+
+            case SD_CMD_GET_SENSOR_BLE_DIVIDER:
+                if (params_len != 1 || params[0] >= SENSOR_BLE_COUNT) {
+                    status = CP_STATUS_INVALID_PARAMETER;
+                } else {
+                    uint16_t divider = Sensor_BLE_GetDivider((Sensor_BLE_Stream_t) params[0]);
+                    response_data_buf[0] = params[0];
+                    response_data_buf[1] = divider & 0xFF;
+                    response_data_buf[2] = divider >> 8;
+                    response_data_len = 3;
                     status = CP_STATUS_SUCCESS;
                 }
                 break;
