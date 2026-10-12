@@ -30,6 +30,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "baro.h"
 #include "gnss.h"
 #include "vbat.h"
 /* USER CODE END Includes */
@@ -85,6 +86,8 @@ uint8_t Custom_APP_IsConnected(void);
 Custom_CRS_Packet_t *Custom_CRS_GetNextRxPacket(void);
 
 void Custom_GNSS_Update(const FS_GNSS_Data_t *current);
+void Custom_Baro_Reset(void);
+void Custom_Baro_Update(const FS_Baro_Data_t *current);
 
 Custom_Start_Packet_t *Custom_Start_GetNextControlPacket(void);
 void Custom_Start_Update(uint16_t year, uint8_t month, uint8_t day,

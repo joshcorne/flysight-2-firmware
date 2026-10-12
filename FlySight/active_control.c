@@ -92,6 +92,9 @@ void FS_ActiveControl_Init(void)
 
 	// Initialize saved GNSS time
 	memset(&savedTime, 0, sizeof(FS_GNSS_Time_t));
+
+	// Take a new barometer start reference for this session
+	Custom_Baro_Reset();
 }
 
 void FS_ActiveControl_DeInit(void)
@@ -124,6 +127,9 @@ void FS_Baro_DataReady_Callback(void)
 		// Save to log file
 		FS_Log_WriteBaroData(FS_Baro_GetData());
 	}
+
+	// Update BLE characteristic
+	Custom_Baro_Update(FS_Baro_GetData());
 }
 
 void FS_Hum_DataReady_Callback(void)

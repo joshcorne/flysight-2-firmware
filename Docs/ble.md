@@ -64,7 +64,7 @@ The FlySight 2's operational mode affects BLE service availability, primarily du
 
 *   **Idle Mode (LED Off):** Default low-power state. BLE is active (slow advertising). Full BLE functionality (File Transfer, Real-time Data subscription, State Control) is available. This is the **required** mode for file system operations via BLE.
 *   **Active Mode (Green LED):** GNSS active, logging, audio feedback. Entered via a ~1s power button press from Idle.
-    *   Real-time data (`SD_GNSS_Measurement`) notifications are available if subscribed.
+    *   Real-time data (`SD_GNSS_Measurement`, `SD_Baro_Measurement`) notifications are available if subscribed.
     *   **File Transfer (File_Transfer service) is UNAVAILABLE** due to potential SD card conflicts with logging. Commands will likely return NAK (`0xf0`).
 *   **Config Selection Mode (Orange LED):** Entered via short press then long press from Idle. BLE connection may be possible, but file transfer is unavailable.
 *   **USB Mode (Red/Green LED):** Mass Storage Device mode. BLE connection may be possible, but **File Transfer (File_Transfer service) is UNAVAILABLE** due to USB using the file system.
@@ -199,7 +199,7 @@ Packets sent over `FT_Packet_In` (WriteWithoutResponse) and received via notific
 
 ### 2. Sensor_Data Service
 
-Provides live GNSS data when FlySight is in Active Mode or Start Mode. Requires bonding.
+Provides live GNSS data when FlySight is in Active Mode or Start Mode, and live barometer data in Active Mode. Requires bonding.
 
 *   **Service UUID:** `00000001-cc7a-482a-984a-7f2ed5b3e58f`
 *   **Characteristics:**
@@ -259,6 +259,18 @@ Provides live GNSS data when FlySight is in Active Mode or Start Mode. Requires 
                 *   Invalid Param: `[0xF0] [0x02] [0x03 (CP_STATUS_INVALID_PARAMETER)]`
             *   For unknown command:
                 *   `[0xF0] [Received Opcode] [0x02 (CP_STATUS_CMD_NOT_SUPPORTED)]`
+
+    *   **`SD_Baro_Measurement` (Pressure/Temperature)**
+        *   UUID: `00000008-8e22-4541-9d4c-21edae82ed19`
+        *   Properties: **Read, Notify**
+        *   Permissions: Encrypted Read/Write required.
+        *   Usage: Streams barometer samples *only when FlySight is in Active Mode* with `Enable_Baro` set (the barometer is not started in Start Mode). Updates at `Baro_ODR` from `config.txt` (10 Hz by default). Central must enable notifications. At most one barometer packet is queued at a time, so if the link cannot keep up with the configured rate, intermediate samples are skipped rather than delaying GNSS notifications. Use `time` to compute rates rather than notification arrival times.
+        *   Length: 14 bytes (`SizeSd_Baro_Measurement`). Constant length; clients should ignore any trailing bytes so fields can be appended in future.
+        *   **Data Format (Little Endian):**
+            *   Bytes 0-3: `time` (uint32_t). Sample time (ms) on the FlySight's sensor clock, which starts when the current mode starts. Wraps after ~49 days. Not aligned to GNSS time.
+            *   Bytes 4-7: `pressure` (int32_t). Static pressure (Pa * 100).
+            *   Bytes 8-9: `temperature` (int16_t). Barometer temperature (degrees C * 100).
+            *   Bytes 10-13: `start_pressure` (int32_t). Pressure of the first barometer sample since Active Mode started (Pa * 100). It stays the same for the whole session, so a client that connects or reconnects late can still measure height relative to where the FlySight was switched on.
 
 ### 3. Starter_Pistol Service
 
@@ -383,6 +395,7 @@ FlySight 2 also implements standard BLE services:
 | Sensor Data Service     |                           | `00000001-cc7a-482a-984a-7f2ed5b3e58f`       | Sensor_Data        |                        | N/A                |
 | GNSS Measurement        | `SD_GNSS_Measurement`     | `00000000-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 44 (Var)           |
 | Sensor Data Control     | `SD_Control_Point`        | `00000006-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Write, Indicate        | 20 (Var)           |
+| Barometer Measurement   | `SD_Baro_Measurement`     | `00000008-8e22-4541-9d4c-21edae82ed19`       | Sensor_Data        | Read, Notify           | 14 (Const)         |
 | Starter Pistol Service  |                           | `00000002-cc7a-482a-984a-7f2ed5b3e58f`       | Starter_Pistol     |                        | N/A                |
 | Starter Pistol Control  | `SP_Control_Point`        | `00000003-8e22-4541-9d4c-21edae82ed19`       | Starter_Pistol     | Write, Indicate        | 20 (Var)           |
 | Starter Pistol Result   | `SP_Result`               | `00000004-8e22-4541-9d4c-21edae82ed19`       | Starter_Pistol     | Read, Indicate         | 9 (Const)          |

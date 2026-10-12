@@ -47,6 +47,7 @@ typedef struct
   /* Sensor_Data */
   uint8_t               Sd_gnss_measurement_Notification_Status;
   uint8_t               Sd_control_point_Indication_Status;
+  uint8_t               Sd_baro_measurement_Notification_Status;
   /* Starter_Pistol */
   uint8_t               Sp_control_point_Indication_Status;
   uint8_t               Sp_result_Indication_Status;
@@ -97,6 +98,12 @@ static uint32_t rx_read_index, rx_write_index;
 
 static uint8_t gnss_pv_packet[GNSS_BLE_MAX_LEN];
 
+static FS_Baro_Data_t baro_sample;
+static int32_t baro_start_pressure;
+static volatile uint8_t baro_start_valid = 0;
+static uint8_t baro_packet[14];
+static volatile uint8_t baro_tx_pending = 0;
+
 static uint8_t start_result_packet[9];
 
 static uint8_t connected_flag = 0;
@@ -118,6 +125,8 @@ static void Custom_Sd_gnss_measurement_Update_Char(void);
 static void Custom_Sd_gnss_measurement_Send_Notification(void);
 static void Custom_Sd_control_point_Update_Char(void);
 static void Custom_Sd_control_point_Send_Indication(void);
+static void Custom_Sd_baro_measurement_Update_Char(void);
+static void Custom_Sd_baro_measurement_Send_Notification(void);
 /* Starter_Pistol */
 static void Custom_Sp_control_point_Update_Char(void);
 static void Custom_Sp_control_point_Send_Indication(void);
@@ -137,6 +146,8 @@ static void Custom_CRS_OnConnect(Custom_App_ConnHandle_Not_evt_t *pNotification)
 static void Custom_CRS_OnDisconnect(void);
 static void Custom_CRS_OnRxWrite(Custom_STM_App_Notification_evt_t *pNotification);
 static void Custom_App_Timeout(void);
+static void Custom_Baro_Transmit(void);
+static void Custom_Baro_TxComplete(void);
 /* USER CODE END PFP */
 
 /* Functions Definition ------------------------------------------------------*/
@@ -218,6 +229,28 @@ void Custom_STM_App_Notification(Custom_STM_App_Notification_evt_t *pNotificatio
       /* USER CODE BEGIN CUSTOM_STM_SD_CONTROL_POINT_INDICATE_DISABLED_EVT */
       Custom_App_Context.Sd_control_point_Indication_Status = 0;
       /* USER CODE END CUSTOM_STM_SD_CONTROL_POINT_INDICATE_DISABLED_EVT */
+      break;
+
+    case CUSTOM_STM_SD_BARO_MEASUREMENT_READ_EVT:
+      /* USER CODE BEGIN CUSTOM_STM_SD_BARO_MEASUREMENT_READ_EVT */
+      if (!Custom_App_Context.Sd_baro_measurement_Notification_Status)
+      {
+        Custom_STM_App_Update_Char(CUSTOM_STM_SD_BARO_MEASUREMENT, baro_packet);
+      }
+      /* USER CODE END CUSTOM_STM_SD_BARO_MEASUREMENT_READ_EVT */
+      break;
+
+    case CUSTOM_STM_SD_BARO_MEASUREMENT_NOTIFY_ENABLED_EVT:
+      /* USER CODE BEGIN CUSTOM_STM_SD_BARO_MEASUREMENT_NOTIFY_ENABLED_EVT */
+      baro_tx_pending = 0;
+      Custom_App_Context.Sd_baro_measurement_Notification_Status = 1;
+      /* USER CODE END CUSTOM_STM_SD_BARO_MEASUREMENT_NOTIFY_ENABLED_EVT */
+      break;
+
+    case CUSTOM_STM_SD_BARO_MEASUREMENT_NOTIFY_DISABLED_EVT:
+      /* USER CODE BEGIN CUSTOM_STM_SD_BARO_MEASUREMENT_NOTIFY_DISABLED_EVT */
+      Custom_App_Context.Sd_baro_measurement_Notification_Status = 0;
+      /* USER CODE END CUSTOM_STM_SD_BARO_MEASUREMENT_NOTIFY_DISABLED_EVT */
       break;
 
     /* Starter_Pistol */
@@ -393,6 +426,8 @@ void Custom_APP_Init(void)
   /* USER CODE BEGIN CUSTOM_APP_Init */
   BLE_TX_Queue_Init();
 
+  UTIL_SEQ_RegTask(1<<CFG_TASK_FS_BARO_BLE_UPDATE_ID, UTIL_SEQ_RFU, Custom_Baro_Transmit);
+
   SensorData_Init();
   DeviceState_Init();
   // Starter Pistol is initialized by the main mode logic when entering that mode.
@@ -403,6 +438,7 @@ void Custom_APP_Init(void)
   /* Sensor_Data */
   Custom_App_Context.Sd_gnss_measurement_Notification_Status = 0;
   Custom_App_Context.Sd_control_point_Indication_Status = 0;
+  Custom_App_Context.Sd_baro_measurement_Notification_Status = 0;
 
   /* Starter_Pistol */
   Custom_App_Context.Sp_control_point_Indication_Status = 0;
@@ -554,6 +590,45 @@ void Custom_Sd_control_point_Send_Indication(void) /* Property Indication */
   /* USER CODE BEGIN Sd_control_point_IS_Last*/
 
   /* USER CODE END Sd_control_point_IS_Last*/
+
+  return;
+}
+
+void Custom_Sd_baro_measurement_Update_Char(void) /* Property Read */
+{
+  uint8_t updateflag = 0;
+
+  /* USER CODE BEGIN Sd_baro_measurement_UC_1*/
+
+  /* USER CODE END Sd_baro_measurement_UC_1*/
+
+  if (updateflag != 0)
+  {
+    Custom_STM_App_Update_Char(CUSTOM_STM_SD_BARO_MEASUREMENT, (uint8_t *)UpdateCharData);
+  }
+
+  /* USER CODE BEGIN Sd_baro_measurement_UC_Last*/
+
+  /* USER CODE END Sd_baro_measurement_UC_Last*/
+  return;
+}
+
+void Custom_Sd_baro_measurement_Send_Notification(void) /* Property Notification */
+{
+  uint8_t updateflag = 0;
+
+  /* USER CODE BEGIN Sd_baro_measurement_NS_1*/
+
+  /* USER CODE END Sd_baro_measurement_NS_1*/
+
+  if (updateflag != 0)
+  {
+    Custom_STM_App_Update_Char(CUSTOM_STM_SD_BARO_MEASUREMENT, (uint8_t *)NotifyCharData);
+  }
+
+  /* USER CODE BEGIN Sd_baro_measurement_NS_Last*/
+
+  /* USER CODE END Sd_baro_measurement_NS_Last*/
 
   return;
 }
@@ -788,6 +863,7 @@ static void Custom_CRS_OnDisconnect(void)
 
   Custom_App_Context.Sd_gnss_measurement_Notification_Status = 0;
   Custom_App_Context.Sd_control_point_Indication_Status = 0;
+  Custom_App_Context.Sd_baro_measurement_Notification_Status = 0;
 
   Custom_App_Context.Sp_control_point_Indication_Status = 0;
   Custom_App_Context.Sp_result_Indication_Status = 0;
@@ -846,6 +922,68 @@ void Custom_GNSS_Update(const FS_GNSS_Data_t *current)
     BLE_TX_Queue_SendTxPacket(CUSTOM_STM_SD_GNSS_MEASUREMENT,
         gnss_pv_packet, length, &SizeSd_Gnss_Measurement, 0);
   }
+}
+
+void Custom_Baro_Reset(void)
+{
+  baro_start_valid = 0;
+}
+
+void Custom_Baro_Update(const FS_Baro_Data_t *current)
+{
+  // Called from the I2C DMA interrupt; defer the BLE work to a task
+  memcpy(&baro_sample, current, sizeof(FS_Baro_Data_t));
+
+  // Remember the first sample since the mode started, so clients can use it
+  // as a ground reference no matter when they connect
+  if (!baro_start_valid)
+  {
+    baro_start_pressure = current->pressure;
+    baro_start_valid = 1;
+  }
+
+  UTIL_SEQ_SetTask(1<<CFG_TASK_FS_BARO_BLE_UPDATE_ID, CFG_SCH_PRIO_1);
+}
+
+static void Custom_Baro_Transmit(void)
+{
+  FS_Baro_Data_t sample;
+  int32_t start_pressure;
+  uint32_t primask_bit;
+  uint32_t time_ms;
+  uint8_t *tx_packet;
+
+  // Take a consistent copy of the latest sample
+  primask_bit = __get_PRIMASK();
+  __disable_irq();
+  memcpy(&sample, &baro_sample, sizeof(FS_Baro_Data_t));
+  start_pressure = baro_start_pressure;
+  __set_PRIMASK(primask_bit);
+
+  time_ms = (uint32_t) (sample.time / 1000);
+
+  memcpy(&baro_packet[0], &time_ms, sizeof(time_ms));
+  memcpy(&baro_packet[4], &sample.pressure, sizeof(sample.pressure));
+  memcpy(&baro_packet[8], &sample.temperature, sizeof(sample.temperature));
+  memcpy(&baro_packet[10], &start_pressure, sizeof(start_pressure));
+
+  // Keep at most one barometer packet in the TX queue. If the link can't keep
+  // up with the barometer rate, newer samples replace older ones instead of
+  // crowding out GNSS packets.
+  if (Custom_App_Context.Sd_baro_measurement_Notification_Status
+      && !baro_tx_pending
+      && (tx_packet = BLE_TX_Queue_GetNextTxPacket()))
+  {
+    baro_tx_pending = 1;
+    memcpy(tx_packet, baro_packet, SizeSd_Baro_Measurement);
+    BLE_TX_Queue_SendNextTxPacket(CUSTOM_STM_SD_BARO_MEASUREMENT,
+        SizeSd_Baro_Measurement, 0, Custom_Baro_TxComplete);
+  }
+}
+
+static void Custom_Baro_TxComplete(void)
+{
+  baro_tx_pending = 0;
 }
 
 void Custom_Start_Update(uint16_t year, uint8_t month, uint8_t day,
