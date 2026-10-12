@@ -77,6 +77,7 @@ typedef struct
 	int32_t elev;
 	uint8_t type;
 	char    filename[9];
+	uint8_t acro_alarm;
 } FS_Config_Alarm_t;
 
 typedef struct
@@ -135,6 +136,11 @@ typedef struct
 	int32_t  alarm_window_above;
 	int32_t  alarm_window_below;
 	int32_t  dz_elev;
+	int32_t acro_win;
+	int32_t exit_up_thresh;
+	int32_t exit_down_thresh;
+	uint8_t exit_num_down;
+	uint8_t exit_num_up;
 
 	FS_Config_Alarm_t alarms[FS_CONFIG_MAX_ALARMS];
 	uint8_t  num_alarms;

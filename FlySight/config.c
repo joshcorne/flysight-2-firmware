@@ -154,6 +154,14 @@ static const char defaultConfig[] =
 		"                 ;   2 = Play file\n"
 		"Init_File: 0     ; File to be played\n"
 		"\n"
+		"; Acro settings\n"
+		"\n"
+		"Acro_Win:           -1   ; Acro window, meters below exit (negative to disable exit detection)\n"
+		"Exit_Num_Down:      5    ; Consecutive points down to indicate an exit\n"
+		"Exit_Num_Up:        50   ; Consecutive points up to reset the exit altitude\n"
+		"Exit_Down_Thresh:   800  ; Speed to indicate travelling downwards (cm/s)\n"
+		"Exit_Up_Thresh:     -800 ; Speed to indicate travelling upwards (cm/s)\n"
+		"\n"
 		"; Alarm settings\n"
 		"\n"
 		"; WARNING: GPS measurements depend on very weak signals\n"
@@ -179,6 +187,7 @@ static const char defaultConfig[] =
 		"                 ;   3 = Chirp down\n"
 		"                 ;   4 = Play file\n"
 		"Alarm_File:    0 ; File to be played\n"
+		"Alarm_Acro:    0 ; Alarm elevation is relative to the bottom of the acro window\n"
 		"\n"
 		"; Altitude mode settings\n"
 		"\n"
@@ -323,6 +332,11 @@ void FS_Config_Init(void)
 	config.alarm_window_above = 0;
 	config.alarm_window_below = 0;
 	config.dz_elev       = 0;
+	config.acro_win      = -1000;
+	config.exit_up_thresh = -800;
+	config.exit_down_thresh = 800;
+	config.exit_num_down = 5;
+	config.exit_num_up  = 50;
 
 	config.num_alarms    = 0;
 
@@ -434,6 +448,11 @@ FS_Config_Result_t FS_Config_Read(const char *filename)
 		HANDLE_VALUE("Win_Above", config.alarm_window_above, val * 1000, TRUE);
 		HANDLE_VALUE("Win_Below", config.alarm_window_below, val * 1000, TRUE);
 		HANDLE_VALUE("DZ_Elev",   config.dz_elev,      val * 1000, TRUE);
+		HANDLE_VALUE("Acro_Win",  config.acro_win,     val * 1000, TRUE);
+		HANDLE_VALUE("Exit_Num_Down", config.exit_num_down, val, val >= 0 && val <= 255);
+		HANDLE_VALUE("Exit_Num_Up", config.exit_num_up, val, val >= 0 && val <= 255);
+		HANDLE_VALUE("Exit_Down_Thresh", config.exit_down_thresh, val, TRUE);
+		HANDLE_VALUE("Exit_Up_Thresh", config.exit_up_thresh, val, TRUE);
 		HANDLE_VALUE("TZ_Offset", config.tz_offset,    val, TRUE);
 		HANDLE_VALUE("Init_Mode", config.init_mode,    val, val >= 0 && val <= 2);
 		HANDLE_VALUE("Alt_Units", config.alt_units,    val, val >= 0 && val <= 1);
@@ -491,6 +510,7 @@ FS_Config_Result_t FS_Config_Read(const char *filename)
 			config.alarms[config.num_alarms - 1].elev = val * 1000;
 			config.alarms[config.num_alarms - 1].type = 0;
 			config.alarms[config.num_alarms - 1].filename[0] = '\0';
+			config.alarms[config.num_alarms - 1].acro_alarm = 0;
 		}
 		if (!strcmp(name, "Alarm_Type") && config.num_alarms <= FS_CONFIG_MAX_ALARMS)
 		{
@@ -501,6 +521,10 @@ FS_Config_Result_t FS_Config_Read(const char *filename)
 			result[8] = '\0';
 			strncpy(config.alarms[config.num_alarms - 1].filename, result,
 					sizeof(config.alarms[config.num_alarms - 1].filename));
+		}
+		if (!strcmp(name, "Alarm_Acro") && config.num_alarms <= FS_CONFIG_MAX_ALARMS)
+		{
+			config.alarms[config.num_alarms - 1].acro_alarm = val;
 		}
 
 		if (!strcmp(name, "Win_Top") && config.num_windows < FS_CONFIG_MAX_WINDOWS)

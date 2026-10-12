@@ -71,6 +71,11 @@ static int32_t prevHMSL;
 
 static uint8_t g_suppress_tone;
 
+static uint8_t exit_alt_valid;
+static uint8_t exit_direction;
+static uint8_t exit_count;
+static int32_t exit_alt;
+
 static char speech_buf[16];
 static char *speech_ptr;
 
@@ -641,13 +646,25 @@ static void updateAlarms(
 	int32_t step_size, step, step_elev;
 
 	char filename[13];
+	int32_t alarm_elev;
 
 	suppress_tone = 0;
 	suppress_alt = 0;
 
 	for (i = 0; i < config->num_alarms; ++i)
 	{
-		const int32_t alarm_elev = config->alarms[i].elev + config->dz_elev;
+		alarm_elev = config->alarms[i].elev + config->dz_elev;
+		if (config->alarms[i].acro_alarm)
+		{
+			if (!exit_alt_valid)
+			{
+				alarm_elev = 0;
+			}
+			else
+			{
+				alarm_elev = config->alarms[i].elev + exit_alt - config->acro_win;
+			}
+		}
 
 		if ((current->hMSL <= alarm_elev + config->alarm_window_above) &&
 		    (current->hMSL >= alarm_elev - config->alarm_window_below))
@@ -706,7 +723,18 @@ static void updateAlarms(
 
 		for (i = 0; i < config->num_alarms; ++i)
 		{
-			const int32_t alarm_elev = config->alarms[i].elev + config->dz_elev;
+			alarm_elev = config->alarms[i].elev + config->dz_elev;
+			if (config->alarms[i].acro_alarm)
+			{
+				if (!exit_alt_valid)
+				{
+					alarm_elev = 0;
+				}
+				else
+				{
+					alarm_elev = config->alarms[i].elev + exit_alt - config->acro_win;
+				}
+			}
 
 			if (alarm_elev >= min && alarm_elev < max)
 			{
@@ -751,6 +779,65 @@ static void updateAlarms(
 				*(speech_ptr++) = '\0';
 				speech_ptr = speech_buf;
 			}
+		}
+	}
+}
+
+static void updateExit(
+	FS_Config_Data_t *config,
+	FS_GNSS_Data_t *current)
+{
+	const int32_t velD = current->velD / 10;
+
+	if (config->acro_win < 0 || current->hMSL < config->acro_win + config->dz_elev)
+	{
+		return;
+	}
+
+	if (exit_direction)
+	{
+		if (velD > config->exit_down_thresh)
+		{
+			if (exit_count == 0) exit_alt = current->hMSL;
+			if (exit_count < 255) ++exit_count;
+		}
+		else if (velD < config->exit_up_thresh)
+		{
+			exit_count = 1;
+			exit_direction = 0;
+		}
+		else
+		{
+			exit_count = 0;
+		}
+
+		if (!exit_alt_valid && exit_count > config->exit_num_down)
+		{
+			exit_alt_valid = 1;
+			FS_Audio_Play("exit.wav", config->sp_volume * 5);
+		}
+	}
+	else
+	{
+		if (velD > config->exit_down_thresh)
+		{
+			exit_count = 1;
+			exit_alt = current->hMSL;
+			exit_direction = 1;
+		}
+		else if (velD < config->exit_up_thresh)
+		{
+			if (exit_count < 255) ++exit_count;
+		}
+		else
+		{
+			exit_count = 0;
+		}
+
+		if (exit_alt_valid && exit_count > config->exit_num_up)
+		{
+			exit_alt_valid = 0;
+			FS_Audio_Play("reset.wav", config->sp_volume * 5);
 		}
 	}
 }
@@ -885,6 +972,7 @@ static void producerTask(void)
 
 		updateAlarms(&config, &current);
 		updateTones(&config, &current);
+		updateExit(&config, &current);
 
 		if (!(flags & FLAG_BEEP_DONE))
 		{
